@@ -754,6 +754,7 @@ require('lazy').setup({
         -- ts_ls = {},
         --
         ruff = {}, -- Python linter
+        texlab = {}, -- LaTeX (completion, diagnostics; vimtex handles compiling)
         basedpyright = {
           settings = {
             basedpyright = {
@@ -1018,28 +1019,62 @@ require('lazy').setup({
       --  Check out: https://github.com/echasnovski/mini.nvim
     end,
   },
+  { -- LaTeX: compile with <localleader>ll, view with <localleader>lv. See `:help vimtex`
+    'lervag/vimtex',
+    lazy = false, -- vimtex handles its own lazy loading and breaks if lazy-loaded
+    init = function()
+      vim.g.vimtex_view_method = 'general' -- opens the PDF in the system default viewer
+      vim.g.vimtex_compiler_method = 'latexmk'
+    end,
+  },
   { -- Highlight, edit, and navigate code
     'nvim-treesitter/nvim-treesitter',
+    branch = 'main',
+    lazy = false, -- nvim-treesitter does not support lazy-loading
     build = ':TSUpdate',
-    main = 'nvim-treesitter.configs', -- Sets main module to use for opts
     -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
-    opts = {
-      ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' },
-      -- Autoinstall languages that are not installed
-      auto_install = true,
-      highlight = {
-        enable = true,
-        -- Some languages depend on vim's regex highlighting system (such as Ruby) for indent rules.
-        --  If you are experiencing weird indenting issues, add the language to
-        --  the list of additional_vim_regex_highlighting and disabled languages for indent.
-        additional_vim_regex_highlighting = { 'ruby' },
-      },
-      indent = { enable = true, disable = { 'ruby' } },
-    },
+    -- Installing parsers needs `tree-sitter` (the CLI, 0.26.1+) and a C compiler.
+    config = function()
+      local ts = require 'nvim-treesitter'
+      ts.install { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
+
+      -- vimtex provides better LaTeX highlighting (math zones, concealing) than treesitter
+      local ignore = { latex = true }
+      -- Some languages depend on vim's regex highlighting system (such as Ruby) for indent rules.
+      --  If you are experiencing weird indenting issues, add the language here.
+      local regex_indent = { ruby = true }
+
+      local function attach(buf, lang)
+        if not vim.api.nvim_buf_is_valid(buf) or not pcall(vim.treesitter.start, buf, lang) then
+          return
+        end
+        if regex_indent[lang] then
+          vim.bo[buf].syntax = 'on'
+        else
+          vim.bo[buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+        end
+      end
+
+      vim.api.nvim_create_autocmd('FileType', {
+        desc = 'Start treesitter, installing the parser first if needed',
+        group = vim.api.nvim_create_augroup('kickstart-treesitter', { clear = true }),
+        callback = function(args)
+          local buf, lang = args.buf, vim.treesitter.language.get_lang(args.match)
+          if not lang or ignore[lang] then
+            return
+          end
+          if vim.list_contains(ts.get_installed 'parsers', lang) then
+            attach(buf, lang)
+          elseif vim.list_contains(ts.get_available(), lang) then
+            -- Autoinstall languages that are not installed
+            ts.install(lang):await(vim.schedule_wrap(function() attach(buf, lang) end))
+          end
+        end,
+      })
+    end,
     -- There are additional nvim-treesitter modules that you can use to interact
     -- with nvim-treesitter. You should go explore a few and see what interests you:
     --
-    --    - Incremental selection: Included, see `:help nvim-treesitter-incremental-selection-mod`
     --    - Show your current context: https://github.com/nvim-treesitter/nvim-treesitter-context
     --    - Treesitter + textobjects: https://github.com/nvim-treesitter/nvim-treesitter-textobjects
   },

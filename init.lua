@@ -565,8 +565,6 @@ require('lazy').setup({
     },
 
     config = function()
-      local capabilities = require('blink-cmp').get_lsp_capabilities()
-      vim.lsp.config('lua_ls', { capabilities = capabilities })
       --
       -- LSP is an initialism you've probably heard, but might not understand what it is.
       --
@@ -755,9 +753,10 @@ require('lazy').setup({
         -- But for many setups, the LSP (`ts_ls`) will work just fine
         -- ts_ls = {},
         --
+        ruff = {}, -- Python linter
         basedpyright = {
           settings = {
-            python = {
+            basedpyright = {
               analysis = {
                 autoSearchPaths = true,
                 diagnosticMode = 'workspace',
@@ -805,17 +804,15 @@ require('lazy').setup({
       require('mason-lspconfig').setup {
         ensure_installed = {}, -- explicitly set to an empty table (Kickstart populates installs via mason-tool-installer)
         automatic_installation = false,
-        handlers = {
-          function(server_name)
-            local server = servers[server_name] or {}
-            -- This handles overriding only values explicitly passed
-            -- by the server configuration above. Useful when disabling
-            -- certain features of an LSP (for example, turning off formatting for ts_ls)
-            server.capabilities = vim.tbl_deep_extend('force', {}, capabilities, server.capabilities or {})
-            require('lspconfig')[server_name].setup(server)
-          end,
-        },
+        automatic_enable = true,
       }
+
+      -- mason-lspconfig v2 no longer supports `handlers`, so pass each server's
+      -- settings and capabilities to Neovim's built-in vim.lsp.config instead.
+      for server_name, server in pairs(servers) do
+        server.capabilities = vim.tbl_deep_extend('force', {}, capabilities, server.capabilities or {})
+        vim.lsp.config(server_name, server)
+      end
     end,
   },
 
